@@ -1,0 +1,56 @@
+# Rebuild the Rawaked public snapshot every 30 minutes and publish it
+# to GitHub Pages (free: public repo, no secrets, no billing).
+#
+# The snapshot (snapshot.json) is the read-path for public browsing of
+# the Rawaked medicines-exchange platform (https://libya-med-exchange.web.app):
+# the web app loads the boards from this ONE file (0 Firestore reads)
+# instead of ~200 reads per load, and the daily NUMBERS report derives
+# its counts from it. If a run fails (e.g. the Firestore daily quota is
+# exhausted at that moment) the run fails visibly and Pages keeps the
+# previous file; the next run 30 minutes later retries. The app falls
+# back to live Firestore reads if the file is older than 2 hours.
+name: Rebuild public snapshot
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 minutes
+  workflow_dispatch: # manual run (use for the first build + after setup)
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build snapshot.json
+        run: python3 build_snapshot.py --out public/snapshot.json
+
+      - name: Show counts (log only, no personal data)
+        run: python3 -c "import json; print(json.load(open('public/snapshot.json'))['counts'])"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
